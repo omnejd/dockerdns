@@ -1,6 +1,7 @@
 # dockerdns
 Simple DNS service for Docker containers
 
+
 #### Idea
 Use DNS for basic Docker "container discovery" by returning running container's internal IP to DNS query matching container hostname.
 
