@@ -4,16 +4,17 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.SocketException;
-import java.net.UnknownHostException;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xbill.DNS.ARecord;
-import org.xbill.DNS.Address;
 import org.xbill.DNS.DClass;
 import org.xbill.DNS.Flags;
 import org.xbill.DNS.Header;
@@ -47,14 +48,10 @@ public class DNSService extends Thread {
 	public DNSService(InetAddress bindAddr, int port, long ttl) throws SocketException {
 		super(DNSService.class.getSimpleName());
 		this.setDaemon(true);
-		if(bindAddr == null) {
-			try {
-				bindAddr = Address.getByAddress("0.0.0.0");
-			} catch (UnknownHostException e) {
-				throw new RuntimeException("Failed get address for 0.0.0.0", e);
-			}
-		}
-		sock = new DatagramSocket(port, bindAddr);
+		if(bindAddr != null)
+			sock = new DatagramSocket(port, bindAddr);
+		else
+			sock = new DatagramSocket(port);
 		this.ttl = ttl;
 	}
 
@@ -98,7 +95,31 @@ public class DNSService extends Thread {
 
 	@Override
 	public void run() {
-		log.info("DNS service started on "+sock.getLocalAddress().getHostAddress()+":"+sock.getLocalPort());
+		if(sock.getLocalAddress().isAnyLocalAddress()) {
+			String str = null;
+			try {
+				Enumeration<NetworkInterface> enu = NetworkInterface.getNetworkInterfaces();
+				while(enu.hasMoreElements()) {
+					NetworkInterface ifc = enu.nextElement();
+					if(ifc.isUp()) {
+						Enumeration<InetAddress> enu2 = ifc.getInetAddresses();
+						while(enu2.hasMoreElements()) {
+							InetAddress addr = enu2.nextElement();
+							if(!(addr instanceof Inet4Address))
+								continue;
+							if(str == null)
+								str = addr.getHostAddress()+":"+sock.getLocalPort();
+							else
+								str += ", " + addr.getHostAddress()+":"+sock.getLocalPort();
+						}
+					}
+				}
+			}
+			catch(Exception e) {}
+			log.info("DNS service started on "+str);
+		}
+		else
+			log.info("DNS service started on "+sock.getLocalAddress().getHostAddress()+":"+sock.getLocalPort());
 		while (!shutdown) {
 			try {
 				receiveAndReply();
