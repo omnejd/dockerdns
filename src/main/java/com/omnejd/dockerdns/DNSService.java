@@ -216,10 +216,10 @@ public class DNSService extends Thread {
 		}
 		if(rec != null) {
 			response.addRecord(rec, Section.ANSWER);
-			log.debug("Answering "+name+" > "+rec);
+			log.debug(indp.getAddress().getHostAddress()+":"+indp.getPort()+" query '"+name+"' > "+rec.rdataToString());
 		}
 		else {
-			log.debug("Answering "+name+" > empty");
+			log.debug(indp.getAddress().getHostAddress()+":"+indp.getPort()+" query '"+name+"' > nothing");
 		}
 		return Rcode.NOERROR;
 	}
