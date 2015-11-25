@@ -40,12 +40,13 @@ public class DNSService extends Thread {
 	private final Map<Name, Record> records = new HashMap<Name, Record>();
 	private final DatagramSocket sock;
 	private final long ttl;
+	private final String domain;
 	private final byte [] buff = new byte[UDP_LENGTH];
 	private final DatagramPacket indp = new DatagramPacket(buff, buff.length);
 	private DatagramPacket outdp = null;
 	private boolean shutdown = false;
 	
-	public DNSService(InetAddress bindAddr, int port, long ttl) throws SocketException {
+	public DNSService(InetAddress bindAddr, int port, long ttl, String domain) throws SocketException {
 		super(DNSService.class.getSimpleName());
 		this.setDaemon(true);
 		if(bindAddr != null)
@@ -53,6 +54,7 @@ public class DNSService extends Thread {
 		else
 			sock = new DatagramSocket(port);
 		this.ttl = ttl;
+		this.domain = domain;
 	}
 
 	public void shutdown() {
@@ -61,13 +63,20 @@ public class DNSService extends Thread {
 		sock.close();
 	}
 	
-	public void addRecord(String nameStr, InetAddress address) {
-		final Name name;
+	private Name toName(String nameStr) {
+		if(domain != null)
+			nameStr += '.' + domain + '.';
+		else
+			nameStr += '.';
 		try {
-			name = new Name(nameStr);
+			return new Name(nameStr);
 		} catch (TextParseException e) {
 			throw new IllegalArgumentException("Invalid name: "+nameStr, e);
 		}
+	}
+	
+	public void addRecord(String nameStr, InetAddress address) {
+		final Name name = toName(nameStr);
 		final Record rec = new ARecord(name, DClass.IN, ttl, address);
 		synchronized(records) {
 			records.put(name, rec);
@@ -76,12 +85,7 @@ public class DNSService extends Thread {
 	}
 	
 	public boolean removeRecord(String nameStr) {
-		final Name name;
-		try {
-			name = new Name(nameStr);
-		} catch (TextParseException e) {
-			throw new IllegalArgumentException("Invalid name: "+nameStr, e);
-		}
+		final Name name = toName(nameStr);
 		final Record rec;
 		synchronized(records) {
 			rec = records.remove(name);
@@ -116,7 +120,7 @@ public class DNSService extends Thread {
 				}
 			}
 			catch(Exception e) {}
-			log.info("DNS service started on "+str);
+			log.info("DNS service started. TTL: "+ttl+" domain: "+domain+" bound: "+str);
 		}
 		else
 			log.info("DNS service started on "+sock.getLocalAddress().getHostAddress()+":"+sock.getLocalPort());

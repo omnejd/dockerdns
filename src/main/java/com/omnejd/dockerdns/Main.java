@@ -20,9 +20,11 @@ import joptsimple.OptionSet;
 public class Main {
 
 	public static void main(String[] args) throws IOException {
+		String dnsDomain = "docker";
 		OptionParser parser = new OptionParser();
 		parser.accepts("dnsBind", "Interface to bind DNS service").withRequiredArg().defaultsTo("0.0.0.0");
 		parser.accepts("dnsPort", "UDP port DNS service listens on").withRequiredArg().ofType(Integer.class).defaultsTo(53);
+		parser.accepts("dnsDomain", "Domain part to add on container names").withRequiredArg().ofType(String.class).defaultsTo(dnsDomain);
 		parser.accepts("debug", "Turn on debug logging");
 		parser.acceptsAll(asList("h", "help"), "Show this help");
 
@@ -47,12 +49,16 @@ public class Main {
 			ddns.addDockerServer(dockerUri);
 		}
 		
-		if(options.has("dnsPort")) {
-			ddns.setDnsPort((Integer) options.valueOf("dnsPort"));
-		}
 		if(options.has("dnsBind")) {
 			ddns.setDnsBindAddress(InetAddress.getByName(options.valueOf("dnsBind").toString()));
 		}
+		if(options.has("dnsPort")) {
+			ddns.setDnsPort((Integer) options.valueOf("dnsPort"));
+		}
+		if(options.has("dnsDomain")) {
+			dnsDomain = (String) options.valueOf("dnsDomain");
+		}
+		ddns.setDnsDomain(dnsDomain);
 		
 		ddns.start();
 

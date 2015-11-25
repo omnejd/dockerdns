@@ -24,6 +24,7 @@ public class DockerDNS {
 	private InetAddress dnsBindAddress = null;
 	private int dnsPort = 53;
 	private int dnsTtl = dockerPollInterval + 1;
+	private String dnsDomain = null;
 	
 	private DNSService dns;
 	private Map<URI, DockerMonitor> dockers = new HashMap<URI, DockerMonitor>(); 
@@ -44,6 +45,14 @@ public class DockerDNS {
 		this.dnsPort = dnsPort;
 	}
 	
+	public void setDnsTtl(int dnsTtl) {
+		this.dnsTtl = dnsTtl;
+	}
+	
+	public void setDnsDomain(String dnsDomain) {
+		this.dnsDomain = dnsDomain;
+	}
+	
 	public void setDockerPollInterval(int dockerPollInterval) {
 		this.dockerPollInterval = dockerPollInterval;
 		this.dnsTtl = dockerPollInterval + 1;
@@ -54,7 +63,7 @@ public class DockerDNS {
 			throw new IllegalStateException("No configured Docker servers");
 		
 		try {
-			dns = new DNSService(dnsBindAddress, dnsPort, dnsTtl);
+			dns = new DNSService(dnsBindAddress, dnsPort, dnsTtl, dnsDomain);
 		}
 		catch(SocketException e) {
 			throw new IOException("Failed to start DNS service", e);

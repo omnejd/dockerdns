@@ -37,7 +37,7 @@ public class DockerMonitor extends Thread {
 	private Map<String, String> hosts = new HashMap<String, String>();
 	
 	public DockerMonitor(URI dockerUri, DNSService dns, int pollInterval) throws IOException {
-		super(DockerMonitor.class.getSimpleName()+"-"+dockerUri.getHost()+":"+dockerUri.getPort());
+		super(dockerUri.getHost()+":"+dockerUri.getPort());
 		setDaemon(true);
 		this.dns = dns;
 		this.dockerUri = dockerUri;
@@ -93,10 +93,10 @@ public class DockerMonitor extends Thread {
 			log.debug("Running containers changed. removed:"+removed+" added:"+added);
 			
 			for(Entry<String, String> entry : removed.entrySet()) {
-				dns.removeRecord(entry.getKey() + ".");
+				dns.removeRecord(entry.getKey());
 			}
 			for(Entry<String, String> entry : added.entrySet()) {
-				dns.addRecord(entry.getKey() + ".", InetAddress.getByName(entry.getValue()));
+				dns.addRecord(entry.getKey(), InetAddress.getByName(entry.getValue()));
 			}
 			hosts = newHosts;
 		}
