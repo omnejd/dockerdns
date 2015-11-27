@@ -22,6 +22,7 @@ import org.xbill.DNS.Message;
 import org.xbill.DNS.Name;
 import org.xbill.DNS.OPTRecord;
 import org.xbill.DNS.Opcode;
+import org.xbill.DNS.PTRRecord;
 import org.xbill.DNS.Rcode;
 import org.xbill.DNS.Record;
 import org.xbill.DNS.Section;
@@ -75,23 +76,53 @@ public class DNSService extends Thread {
 		}
 	}
 	
+	private Name toReverseName(InetAddress address) {
+		try {
+			String str = null;
+			byte[] addr = address.getAddress();
+			for(int i = addr.length-1; i >= 0; i--) {
+				if(str == null)
+					str = Byte.toString(addr[i]);
+				else
+					str += '.'+Byte.toString(addr[i]);
+			}
+			return new Name(str+".in-addr.arpa.");
+		} catch (TextParseException e) {
+			throw new IllegalArgumentException("Invalid address: "+address, e);
+		}
+	}
+	
 	public void addRecord(String nameStr, InetAddress address) {
 		final Name name = toName(nameStr);
 		final Record rec = new ARecord(name, DClass.IN, ttl, address);
+		final Name rname = toReverseName(address);
+		final Record rrec = new PTRRecord(rname, DClass.IN, ttl, name);
+		
 		synchronized(records) {
 			records.put(name, rec);
+			records.put(rname, rrec);
 		}
 		log.info("Added record: "+rec.getName()+" -> "+rec.rdataToString());
+		log.info("Added record: "+rrec.getName()+" -> "+rrec.rdataToString());
 	}
 	
 	public boolean removeRecord(String nameStr) {
 		final Name name = toName(nameStr);
 		final Record rec;
+		Record rrec = null;
 		synchronized(records) {
 			rec = records.remove(name);
+			if(rec instanceof ARecord) {
+				ARecord arec = (ARecord)rec;
+				Name rname = toReverseName(arec.getAddress());
+				rrec = records.remove(rname);
+			}
 		}
-		if(rec != null)
+		if(rec != null) {
 			log.info("Removed record: "+rec.getName()+" -> "+rec.rdataToString());
+			if(rrec != null)
+				log.info("Removed record: "+rrec.getName()+" -> "+rrec.rdataToString());
+		}
 		else
 			log.warn("No record found for: "+name);
 		return rec != null;
@@ -146,32 +177,41 @@ public class DNSService extends Thread {
 			return;
 		}
 		Message query;
-		byte [] response = null;
+		Message response = null;
 		try {
 			query = new Message(buff);
 			response = generateReply(query);
-			if (response == null)
+			if (response == null) {
+				if(log.isDebugEnabled())
+					log.debug("Not response to "+indp.getAddress()+":"+indp.getPort()+"\n"+query);
 				return;
+			}
 		}
 		catch (IOException e) {
 			response = formerrMessage(buff);
 		}
+		
+		if(log.isDebugEnabled())
+			log.debug("Response to "+indp.getAddress()+":"+indp.getPort()+"\n"+response);
+		
+		byte[] responseData = response.toWire();
 		if (outdp == null)
-			outdp = new DatagramPacket(response,
-					response.length,
+			outdp = new DatagramPacket(responseData,
+					responseData.length,
 					indp.getAddress(),
 					indp.getPort());
 		else {
-			outdp.setData(response);
-			outdp.setLength(response.length);
+			outdp.setData(responseData);
+			outdp.setLength(responseData.length);
 			outdp.setAddress(indp.getAddress());
 			outdp.setPort(indp.getPort());
 		}
 		sock.send(outdp);
 	}
 	
-	private byte[] generateReply(Message query) throws IOException {
+	private Message generateReply(Message query) throws IOException {
 		Header header;
+		@SuppressWarnings("unused")
 		int maxLength;
 
 		header = query.getHeader();
@@ -207,10 +247,12 @@ public class DNSService extends Thread {
 			return errorMessage(query, Rcode.NOTIMP);
 
 		byte rcode = addAnswer(response, name, type, dclass, 0, 0);
+		if(rcode == -1)
+			return null;
 		if (rcode != Rcode.NOERROR && rcode != Rcode.NXDOMAIN)
 			return errorMessage(query, rcode);
-		
-		return response.toWire(maxLength);
+		response.getHeader().setRcode(rcode);
+		return response;
 	}
 	
 	private byte addAnswer(Message response, Name name, int type, int dclass, int iterations, int flags) {
@@ -218,17 +260,26 @@ public class DNSService extends Thread {
 		synchronized(records) {
 			rec = records.get(name);
 		}
+
+		if(type == Type.PTR) {
+			if(rec != null) {
+				response.getHeader().setFlag(Flags.AA);
+				response.addRecord(rec, Section.ANSWER);
+			}
+			return Rcode.NOERROR;
+		}
+		
 		if(rec != null) {
-			response.addRecord(rec, Section.ANSWER);
-			log.debug(indp.getAddress().getHostAddress()+":"+indp.getPort()+" query '"+name+"' > "+rec.rdataToString());
+			if(rec.getType() == type)
+				response.addRecord(rec, Section.ANSWER);
+			return Rcode.NOERROR;
 		}
-		else {
-			log.debug(indp.getAddress().getHostAddress()+":"+indp.getPort()+" query '"+name+"' > nothing");
-		}
-		return Rcode.NOERROR;
+		else
+			return -1;
+		
 	}
 	
-	private byte[] formerrMessage(byte [] in) {
+	private Message formerrMessage(byte [] in) {
 		Header header;
 		try {
 			header = new Header(in);
@@ -239,11 +290,11 @@ public class DNSService extends Thread {
 		return buildErrorMessage(header, Rcode.FORMERR, null);
 	}
 
-	private byte[] errorMessage(Message query, int rcode) {
+	private Message errorMessage(Message query, int rcode) {
 		return buildErrorMessage(query.getHeader(), rcode, query.getQuestion());
 	}
 
-	private byte[] buildErrorMessage(Header header, int rcode, Record question) {
+	private Message buildErrorMessage(Header header, int rcode, Record question) {
 		Message response = new Message();
 		response.setHeader(header);
 		for (int i = 0; i < 4; i++)
@@ -251,7 +302,9 @@ public class DNSService extends Thread {
 		if (rcode == Rcode.SERVFAIL)
 			response.addRecord(question, Section.QUESTION);
 		header.setRcode(rcode);
-		return response.toWire();
+		if(log.isDebugEnabled())
+			log.debug("Response:\n"+response);
+		return response;
 	}
 
 }
