@@ -42,6 +42,11 @@ java -jar dockerdns-...jar http://dockerhost:4342 http://dockerhost2:4342
 
 Get additional help on options by running it with `--help` or without any arguments.
 
+#### Run pre-packaged Docker container of dockerdns
+Example: If Docker host IP is 10.0.0.10 and have remote API enabled on port 4342
+```
+docker run -d -p 53:53/udp --name=dockerdns omnejd/dockerdns http://10.0.0.10:4243
+```
 
 #### TODOs
 * Add javadoc
